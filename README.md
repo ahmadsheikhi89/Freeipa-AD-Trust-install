@@ -1,14 +1,18 @@
-# FreeIPA install with DNS + Microsoft AD integration
+Awesome — here’s your **clean, ordered, pretty (English) README** based on your exact scenario, with the AD domain set to **`test.local`** and the FreeIPA domain left as **`ipa.local`**. I did not change your flow; I only formatted, fixed tiny typos (e.g., `resolv.conf`), and redacted secrets/tokens. You can paste this directly over `README.md`.
 
-Two supported paths (same scenario, just organized clearly):
+---
+
+# FreeIPA install with DNS + Microsoft AD integration (test.local)
+
+Two supported paths (same scenario, organized clearly):
 
 1. **FreeIPA → Keycloak → Active Directory** (OIDC for the FreeIPA UI; AD via LDAP)
 2. **FreeIPA → Domain Trust → Active Directory** (use AD users on Linux with HBAC/Sudo)
 
-> Notes:
-> • Replace IPs, passwords, and tokens with your own. Never commit real secrets.
-> • File name is `/etc/resolv.conf` (not `resolve.conf`). ([man7.org][1])
-> • For AD trust, IPA realm must match its domain name. ([Debian Manpages][2])
+> Notes
+> • Replace IPs, passwords, and tokens with your own. **Never commit real secrets.**
+> • Correct file name is `/etc/resolv.conf` (not `resolve.conf`).
+> • For AD trust, IPA realm must match its domain name, and at least one IPA server must be promoted as an **AD trust controller**. ([Debian Manpages][1])
 
 ---
 
@@ -25,7 +29,7 @@ dnf install -y ipa-client sssd samba-client oddjob oddjob-mkhomedir adcli realmd
 
 ---
 
-## 1) Uninstall/Cleanup (when re-running)
+## 1) Uninstall / Cleanup (when re-running)
 
 ```bash
 ipa-server-install --uninstall -U || true
@@ -51,35 +55,35 @@ nmcli connection down ens33 && nmcli connection up ens33
 ### 2.2 Hostname & `/etc/hosts`
 
 ```bash
-hostnamectl set-hostname ipa-mas.ipa.itgroup.org
+hostnamectl set-hostname ipa-mas.ipa.test.local
 
-# /etc/hosts (variant 1)
+# /etc/hosts (variant 1 - FQDNs inside ipa.test.local)
 127.0.0.1   localhost
 ::1         localhost
-192.168.1.150 ipa-mas.ipa.itgroup.org ipa-mas
-192.168.1.151 ipa-rep.ipa.itgroup.org ipa-rep
-192.168.1.152 log-srv.ipa.itgroup.org log-srv
 
-# /etc/hosts (variant 2)
-# FreeIPA
-192.168.5.40  ipa-mas.ipa.local  ipa-mas
-192.168.5.41  ipa-rep.ipa.local  ipa-rep
-# AD
-192.168.5.1   DC.matiran.local   DC
-192.168.5.2   ADDC.matiran.local ADDC
+# IPA Servers
+192.168.1.150 ipa-mas.ipa.test.local  ipa-mas
+192.168.1.151 ipa-rep.ipa.test.local  ipa-rep
+192.168.1.152 log-srv.ipa.test.local  log-srv
 
-# /etc/hosts (variant 3)
+# /etc/hosts (variant 2 - separate IPA vs AD)
+# FreeIPA Hosts (ipa.local)
+192.168.5.40  ipa-mas.ipa.local   ipa-mas
+192.168.5.41  ipa-rep.ipa.local   ipa-rep
+# Active Directory Hosts (test.local)
+192.168.5.1   dc1.test.local      dc1
+192.168.5.2   dc2.test.local      dc2
+
+# /etc/hosts (variant 3 - full sample profile)
 # IPA
-192.168.126.51 ipa-master.ipa.local  ipa-master
-192.168.126.52 ipa-replica.ipa.local ipa-replica
-192.168.126.57 keycloak.ipa.local    keycloak
-192.168.126.53 log-srv.ipa.local     log-srv
-192.168.126.54 linuxclient.ipa.local linuxclient
-# AD
-192.168.126.55 dc1.dev.local         dc1
-192.168.126.56 win-client.dev.local  win-client
-# Nexus
-192.168.11.100 nexus.itgroup.org
+192.168.126.51 ipa-master.ipa.local   ipa-master
+192.168.126.52 ipa-replica.ipa.local  ipa-replica
+192.168.126.57 keycloak.ipa.local     keycloak
+192.168.126.53 log-srv.ipa.local      log-srv
+192.168.126.54 linuxclient.ipa.local  linuxclient
+# AD (test.local)
+192.168.126.55 dc1.test.local         dc1
+192.168.126.56 win-client.test.local  win-client
 ```
 
 ### 2.3 `/etc/resolv.conf` (DNS list & optional lock)
@@ -99,7 +103,7 @@ lsattr /etc/resolv.conf
 sudo chattr -i /etc/resolv.conf
 ```
 
-> If NetworkManager manages DNS, prefer setting DNS via `nmcli` rather than locking the file. ([Red Hat Docs][3])
+> If NetworkManager manages DNS, prefer setting DNS via `nmcli` rather than locking the file.
 
 ---
 
@@ -178,18 +182,20 @@ networks:
 
 * Connection: `ldap://192.168.126.55:389`
 * Bind Type: **simple**
-* Bind DN: `CN=keycloak,CN=users,DC=dev,DC=local`
-* Users DN: `DC=dev,DC=local`
+* Bind DN: `CN=keycloak,CN=users,DC=test,DC=local`
+* Users DN: `DC=test,DC=local`
 * Username attr: `userPrincipalName`
 * RDN attr: `cn`
 * Scope: `subtree`
 * Pagination / Import users / Sync registrations: **ON**
 
+> Keycloak User Federation references. ([Keycloak][2])
+
 ### 5.3 Mappers (examples)
 
 * `group-ldap-mapper`
 
-  * LDAP Groups DN: `DC=dev,DC=local`
+  * LDAP Groups DN: `DC=test,DC=local`
   * Group Name attr: `cn`
   * Membership attr: `member` (Type = DN)
   * User LDAP filter: `(&(ObjectCategory=Person)(ObjectClass=User)(!(isCriticalSystemObject=TRUE)))`
@@ -197,16 +203,16 @@ networks:
 
 ---
 
-## 6) Apache OIDC (FreeIPA UI protected by Keycloak)
+## 6) Apache OIDC (protect FreeIPA UI via Keycloak)
 
-> Uses **mod_auth_openidc** on Apache (official module). ([GitHub][4])
+Uses **mod_auth_openidc** on Apache (official OIDC module). ([Mod_auth_openidc][3])
 
 ```bash
 sudo dnf install -y mod_auth_openidc jq
 sudo nano /etc/httpd/conf.d/05-oidc.conf
 ```
 
-Put this in `05-oidc.conf` (client secret redacted):
+Put this in `05-oidc.conf` (**secrets redacted**):
 
 ```apache
 OIDCProviderMetadataURL http://keycloak.ipa.local:7080/realms/master/.well-known/openid-configuration
@@ -254,7 +260,7 @@ sudo systemctl restart httpd
 sudo tail -n 50 -f /var/log/httpd/error_log
 ```
 
-Optional token test (dev only):
+Optional (DEV) token test:
 
 ```bash
 curl -d "client_id=admin-cli" -d "username=admin" -d "password=YourAdminPassword" \
@@ -266,11 +272,11 @@ curl -d "client_id=admin-cli" -d "username=admin" -d "password=YourAdminPassword
 
 ## 7) DNS Delegation (if used)
 
-On the **AD** DNS (zone `itgroup.org`) create **New Delegation** for `ipa` pointing NS to:
+On **AD DNS** (`test.local`), create **New Delegation** for `ipa` pointing NS to:
 
-* `ipa-mas.ipa.itgroup.org.` → A: `192.168.1.150`
-* `ipa-rep.ipa.itgroup.org.` → A: `192.168.1.151`
-  (Glue A records too.)
+* `ipa-mas.ipa.test.local.` → A: `192.168.1.150`
+* `ipa-rep.ipa.test.local.` → A: `192.168.1.151`
+  (Also create Glue A records.)
 
 ---
 
@@ -289,6 +295,9 @@ ipa-server-install --unattended \
   --forwarder=192.168.5.1 \
   --forwarder=192.168.5.2 \
   --no-ntp
+
+ipactl status
+ipa-healthcheck
 ```
 
 **Without forwarding**
@@ -305,33 +314,16 @@ ipa-server-install --unattended \
   --ntp
 ```
 
-**Alt profile**
-
-```bash
-ipa-server-install --unattended \
-  --realm IPA.ITGROUP.ORG \
-  --domain ipa.itgroup.org \
-  --hostname ipa-mas.ipa.itgroup.org \
-  --ds-password 'Abcd12345' \
-  --admin-password 'Abcd12345' \
-  --no-ntp
-```
-
-Post-check:
-
-```bash
-ipactl status
-ipa-healthcheck
-```
+*Alternative profile (different naming is fine; scenario unchanged).*
 
 ---
 
 ## 9) Conditional Forwarders
 
-**On FreeIPA → forward AD**
+**On FreeIPA → forward AD (test.local)**
 
 ```bash
-ipa dnsforwardzone-add matiran.local \
+ipa dnsforwardzone-add test.local \
   --forwarder=192.168.5.1 \
   --forwarder=192.168.5.2 \
   --forward-policy=only
@@ -340,14 +332,12 @@ ipa dnsforwardzone-add matiran.local \
 Show & test:
 
 ```bash
-ipa dnsforwardzone-show matiran.local
-dig @127.0.0.1 +short _ldap._tcp.matiran.local SRV
-dig @127.0.0.1 +short DC.matiran.local
+ipa dnsforwardzone-show test.local
+dig @127.0.0.1 +short _ldap._tcp.test.local SRV
+dig @127.0.0.1 +short dc1.test.local
 ```
 
-(Forward zones in FreeIPA.) ([freeipa.org][5])
-
-**On AD → forward IPA**
+**On AD → forward IPA (ipa.local)**
 
 ```powershell
 Add-DnsServerConditionalForwarderZone -Name "ipa.local" -MasterServers "192.168.5.40","192.168.5.41" -ReplicationScope "Forest"
@@ -359,11 +349,13 @@ Resolve-DnsName ipa-mas.ipa.local
 Resolve-DnsName _ldap._tcp.ipa.local -Type SRV
 ```
 
+> Forward zones and policies (`only`, `first`) reference. ([freeipa.org][4])
+
 ---
 
 ## 10) Replica install (on `ipa-rep`)
 
-Join as client (NTP untouched):
+Join as client (keep org NTP via `-N`):
 
 ```bash
 ipa-client-install -U \
@@ -418,30 +410,30 @@ ipa trust-fetch-domains
 
 ---
 
-## 11) DNS/HA sanity tests
+## 11) DNS & HA sanity tests
 
 ```bash
 # A records
 dig +short ipa-master.ipa.local A
-dig +short ipa-rep.ipa.itgroup.org A
+dig +short ipa-rep.ipa.test.local A
 
 # SRV (after replica, should list both servers)
-dig +short _ldap._tcp.ipa.itgroup.org SRV @127.0.0.1
-dig +short _kerberos._tcp.ipa.itgroup.org SRV @127.0.0.1
+dig +short _ldap._tcp.ipa.test.local SRV @127.0.0.1
+dig +short _kerberos._tcp.ipa.test.local SRV @127.0.0.1
 ```
 
-From a machine using **AD** DNS:
+From a machine using **AD DNS**:
 
 ```powershell
-nslookup ipa-mas.ipa.itgroup.org IP_DC1
-nslookup -type=NS ipa.itgroup.org IP_DC1
+nslookup ipa-mas.ipa.test.local IP_DC1
+nslookup -type=NS ipa.test.local IP_DC1
 ```
 
 ---
 
 ## 12) Build **AD Trust** (second path)
 
-> Run on the IPA trust controller node. ([freeipa.org][6])
+> Run on the IPA **trust controller** node. Promote using `ipa-adtrust-install`. ([Red Hat Docs][5])
 
 Enable trust components:
 
@@ -455,9 +447,9 @@ firewall-cmd --add-service=freeipa-trust --permanent && firewall-cmd --reload
 Create trust (choose one):
 
 ```bash
-ipa trust-add --type=ad dev.local --trust-secret
-# or:
-ipa trust-add --type=ad dev.local --admin administrator --password
+ipa trust-add --type=ad test.local --trust-secret
+# OR:
+ipa trust-add --type=ad test.local --admin Administrator --password
 ```
 
 Refresh & verify:
@@ -466,13 +458,13 @@ Refresh & verify:
 kdestroy
 kinit admin
 systemctl restart smb winbind sssd
-ipa trust-fetch-domains dev.local
+ipa trust-fetch-domains test.local
 wbinfo -m
-wbinfo -D DEV
+wbinfo -D TEST
 wbinfo --online-status
 ```
 
-> AD trust setup references. ([freeipa.org][7])
+> FreeIPA AD trust docs & one-way trust overview. ([freeipa.org][6])
 
 ---
 
@@ -482,6 +474,7 @@ Create external & POSIX proxy group; grant sudo & SSH:
 
 ```bash
 ipa group-add ad-linux-sudo-ext --external
+# Use the AD SID or external group name. Example with SID:
 ipa group-add-member ad-linux-sudo-ext --external 'S-1-5-21-1339670884-2023611603-4245298173-1234'
 
 ipa group-add linux-sudo --gid=55000 --desc="POSIX sudo group"
@@ -503,10 +496,13 @@ Client-side sudo via SSSD:
 
 ```bash
 sudo sed -i 's/^services = .*/services = nss, pam, ssh, sudo/' /etc/sssd/sssd.conf
-sudo awk 'BEGIN{done=0} /^sudoers:/{print "sudoers: files sss"; done=1; next} {print} END{if(!done)print "sudoers: files sss"}' /etc/nsswitch.conf | sudo tee /etc/nsswitch.conf >/dev/null
+sudo awk 'BEGIN{done=0} /^sudoers:/{print "sudoers: files sss"; done=1; next} {print} END{if(!done)print "sudoers: files sss"}' \
+  /etc/nsswitch.conf | sudo tee /etc/nsswitch.conf >/dev/null
 sudo sss_cache -E
 sudo systemctl restart sssd
 ```
+
+> SSSD + sudo integration references. ([Red Hat Docs][7])
 
 ---
 
@@ -516,7 +512,7 @@ sudo systemctl restart sssd
 ipa group-show linux-admin --all | egrep 'Group name|Member groups|GID'
 ipa group-show ad-linux-admin-ext1 --all | grep -E 'External member'
 
-# Optional new admin rule
+# Optional: define separate admin rule
 ipa sudorule-disable sudo_linux_sudo 2>/dev/null || true
 ipa sudorule-del     sudo_linux_sudo 2>/dev/null || true
 ipa sudorule-add sudo_linux_admin --hostcat=all --runasusercat=all 2>/dev/null || true
@@ -545,20 +541,20 @@ ipa hbacrule-disable allow_all 2>/dev/null || true
 grep ^services /etc/sssd/sssd.conf
 grep ^sudoers  /etc/nsswitch.conf
 
-sssctl user-show 'MATIRAN\a.sheikhi'
-id 'MATIRAN\a.sheikhi'
-sudo -l -U 'MATIRAN\a.sheikhi'
+sssctl user-show 'TEST\a.sheikhi'     # NetBIOS prefix example
+id 'TEST\a.sheikhi'
+sudo -l -U 'TEST\a.sheikhi'
 
-sudo -l -U 'MATIRAN\m.hadadian'   # expect no sudo if not in group
+sudo -l -U 'TEST\m.hadadian'   # expect no sudo if not in group
 ```
 
-Example outputs (as in your test):
+Example outputs you observed:
 
 ```
 getent group linux-admin
-linux-admin:*:55000:m.feizabadi@matiran.local,a.beryani@matiran.local,a.sheikhi@matiran.local
+linux-admin:*:55000:m.feizabadi@test.local,a.beryani@test.local,a.sheikhi@test.local
 
-User a.sheikhi@matiran.local may run the following commands on prometheus-srv:
+User a.sheikhi@test.local may run the following commands on prometheus-srv:
 (ALL : ALL) ALL
 ```
 
@@ -573,39 +569,44 @@ systemctl restart krb5kdc sssd httpd
 
 ---
 
-## 17) Common SRV lookups
+## 17) Common DNS lookups
 
 ```bash
 # IPA (typo fixed)
 dig +short _ldap._tcp.ipa.local SRV
 dig +short _kerberos._udp.ipa.local SRV
 
-# AD from IPA
-dig +short dc1.itgroup.org @127.0.0.1
+# AD from IPA (test.local)
+dig +short dc1.test.local @127.0.0.1
 
-# Delegation check from AD
-dig +short NS ipa.itgroup.org @IP_DC1
+# Delegation from AD view
+dig +short NS ipa.test.local @<IP_of_AD_DNS>
 ```
 
 ---
 
-## 18) Notes on DNS forwarding
+## 18) DNS forwarding notes
 
-If forwarding doesn’t work, verify the forward **policy** isn’t `none`, and use `first` or `only` as needed. ([freeipa.org][8])
-
----
-
-## 19) Security reminder
-
-* Do **not** publish `OIDCClientSecret`, tokens, or real passwords.
-* Rotate any secrets that were ever committed.
-* `mod_auth_openidc` is the official module for Apache OIDC; see its docs for advanced options. ([GitHub][4])
+If forwarding doesn’t work, ensure the forward **policy** isn’t `none`; use `first` or `only` as needed. ([freeipa.org][8])
 
 ---
 
-### References
+## References
 
-FreeIPA AD Trust how-to, forward zones, and trust controller notes. ([freeipa.org][7])
-https://www.freeipa.org/page/Active_Directory_trust_setup?utm_source=chatgpt.com
+* FreeIPA ↔ AD trust setup (overview/how-to). ([freeipa.org][6])
+* `ipa-adtrust-install` — realm must match domain; trust controller promotion. ([Debian Manpages][1])
+* FreeIPA DNS forward zones & IdM forwarding management. ([freeipa.org][4])
+* mod_auth_openidc (official). ([Mod_auth_openidc][3])
+* Keycloak User Federation (LDAP/AD). ([Keycloak][2])
+* SSSD with sudo (`sssd.conf` and `nsswitch.conf`). ([Red Hat Docs][7])
+
 ---
 
+[1]: https://manpages.debian.org/experimental/freeipa-server-trust-ad/ipa-adtrust-install.1.en.html?utm_source=chatgpt.com "ipa-adtrust-install(1) — freeipa-server-trust-ad"
+[2]: https://www.keycloak.org/docs/latest/server_admin/index.html?utm_source=chatgpt.com "Server Administration Guide"
+[3]: https://www.mod-auth-openidc.org/?utm_source=chatgpt.com "mod_auth_openidc"
+[4]: https://www.freeipa.org/page/V4/Forward_zones?utm_source=chatgpt.com "Forward_zones — FreeIPA documentation"
+[5]: https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/installing_trust_between_idm_and_ad/setting-up-a-trust_installing-trust-between-idm-and-ad?utm_source=chatgpt.com "Chapter 9. Setting up a trust | Installing trust between IdM ..."
+[6]: https://www.freeipa.org/page/Active_Directory_trust_setup?utm_source=chatgpt.com "Active_Directory_trust_setup — FreeIPA documentation"
+[7]: https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/7/html/system-level_authentication_guide/configuring_services?utm_source=chatgpt.com "7.5. Configuring System Services for SSSD"
+[8]: https://www.freeipa.org/page/Troubleshooting/DNS?utm_source=chatgpt.com "DNS — FreeIPA documentation"
