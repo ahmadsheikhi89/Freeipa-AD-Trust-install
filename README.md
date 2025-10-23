@@ -22,7 +22,7 @@
 
 ---
 
-## 🖼️ Architecture (Mermaid banner)
+## 🖼️ Architecture (UML banner)
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/ahmadsheikhi89/Freeipa-AD-Trust-install/main/freeipa-ad-trust-keycloak.png"
