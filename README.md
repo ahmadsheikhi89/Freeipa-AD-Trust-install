@@ -8,7 +8,7 @@ Two supported paths (same scenario, organized clearly):
 > Notes
 > • Replace IPs, passwords, and tokens with your own. **Never commit real secrets.**
 > • Correct file name is `/etc/resolv.conf` (not `resolve.conf`).
-> • For AD trust, IPA realm must match its domain name, and at least one IPA server must be promoted as an **AD trust controller**. ([Debian Manpages][1])
+> • For AD trust, promote at least one IPA server as an **AD trust controller**. ([Red Hat Docs][1])
 
 ---
 
@@ -126,13 +126,13 @@ firewall-cmd --list-services
 ```powershell
 Install-WindowsFeature -Name AD-Domain-Services -IncludeManagementTools
 Import-Module ADDSDeployment
-$safeModePassword = Read-Host -AsSecureString "Abcd12345"
+$safeModePassword = Read-Host -AsSecureString "<STRONG_PASSWORD>"
 
 Install-ADDSForest `
   -CreateDnsDelegation:$false `
   -DatabasePath "C:\Windows\NTDS" `
-  -DomainName "dev.local" `
-  -DomainNetbiosName "DEV" `
+  -DomainName "test.local" `
+  -DomainNetbiosName "TEST" `
   -InstallDns:$true `
   -LogPath "C:\Windows\NTDS" `
   -NoRebootOnCompletion:$false `
@@ -156,7 +156,7 @@ services:
       KC_HOSTNAME_PORT: 7080
       KC_HOSTNAME_STRICT_BACKCHANNEL: "true"
       KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      KEYCLOAK_ADMIN_PASSWORD: <STRONG_PASSWORD>
       KC_HEALTH_ENABLED: "true"
       KC_LOG_LEVEL: info
     healthcheck:
@@ -184,8 +184,7 @@ networks:
 * RDN attr: `cn`
 * Scope: `subtree`
 * Pagination / Import users / Sync registrations: **ON**
-
-> Keycloak User Federation references. ([Keycloak][2])
+  (Keycloak LDAP/AD federation overview.) ([Keycloak][2])
 
 ### 5.3 Mappers (examples)
 
@@ -194,7 +193,8 @@ networks:
   * LDAP Groups DN: `DC=test,DC=local`
   * Group Name attr: `cn`
   * Membership attr: `member` (Type = DN)
-  * User LDAP filter: `(&(ObjectCategory=Person)(ObjectClass=User)(!(isCriticalSystemObject=TRUE)))`
+  * User LDAP filter:
+    `(&(ObjectCategory=Person)(ObjectClass=User)(!(isCriticalSystemObject=TRUE)))`
   * Mode: `Read_Only`
 
 ---
@@ -214,9 +214,9 @@ Put this in `05-oidc.conf` (**secrets redacted**):
 OIDCProviderMetadataURL http://keycloak.ipa.local:7080/realms/master/.well-known/openid-configuration
 
 OIDCClientID        freeipa
-OIDCClientSecret    <REDACTED_CLIENT_SECRET>
+OIDCClientSecret    <OIDC_CLIENT_SECRET>
 OIDCRedirectURI     https://ipa-master.ipa.local/oidc_callback
-OIDCCryptoPassphrase change_this_to_a_long_random_string
+OIDCCryptoPassphrase <LONG_RANDOM_VALUE>
 
 OIDCScope               "openid profile email"
 OIDCRemoteUserClaim     preferred_username
@@ -256,13 +256,7 @@ sudo systemctl restart httpd
 sudo tail -n 50 -f /var/log/httpd/error_log
 ```
 
-Optional (DEV) token test:
-
-```bash
-curl -d "client_id=admin-cli" -d "username=admin" -d "password=YourAdminPassword" \
-     -d "grant_type=password" \
-     "http://localhost:7080/realms/master/protocol/openid-connect/token"
-```
+*(Optional DEV token test omitted—do not publish tokens.)*
 
 ---
 
@@ -285,8 +279,8 @@ ipa-server-install --unattended \
   --realm IPA.LOCAL \
   --domain ipa.local \
   --hostname ipa-mas.ipa.local \
-  --ds-password 'Abcd12345' \
-  --admin-password 'Abcd12345' \
+  --ds-password '<DM_PASSWORD>' \
+  --admin-password '<IPA_ADMIN_PASSWORD>' \
   --setup-dns \
   --forwarder=192.168.5.1 \
   --forwarder=192.168.5.2 \
@@ -303,14 +297,12 @@ ipa-server-install --unattended \
   --realm IPA.LOCAL \
   --domain ipa.local \
   --hostname ipa-master.ipa.local \
-  --ds-password 'Abcd12345' \
-  --admin-password 'Abcd12345' \
+  --ds-password '<DM_PASSWORD>' \
+  --admin-password '<IPA_ADMIN_PASSWORD>' \
   --setup-dns \
   --no-forwarders \
   --ntp
 ```
-
-*Alternative profile (different naming is fine; scenario unchanged).*
 
 ---
 
@@ -333,6 +325,8 @@ dig @127.0.0.1 +short _ldap._tcp.test.local SRV
 dig @127.0.0.1 +short dc1.test.local
 ```
 
+(Forward zones in FreeIPA; note `only`/`first` policies.) ([freeipa.org][4])
+
 **On AD → forward IPA (ipa.local)**
 
 ```powershell
@@ -344,8 +338,6 @@ Get-DnsServerConditionalForwarderZone -Name "ipa.local" | fl *
 Resolve-DnsName ipa-mas.ipa.local
 Resolve-DnsName _ldap._tcp.ipa.local -Type SRV
 ```
-
-> Forward zones and policies (`only`, `first`) reference. ([freeipa.org][4])
 
 ---
 
@@ -360,7 +352,7 @@ ipa-client-install -U \
   --realm=IPA.LOCAL \
   --mkhomedir -N \
   --principal=admin \
-  --password 'Abcd12345'
+  --password '<IPA_ADMIN_PASSWORD>'
 ```
 
 Promote to replica + DNS:
@@ -372,7 +364,7 @@ ipa-replica-install -U \
   --no-ntp \
   --no-forwarders \
   --principal=admin \
-  --admin-password 'Abcd12345'
+  --admin-password '<IPA_ADMIN_PASSWORD>'
 ```
 
 Validate:
@@ -388,12 +380,12 @@ systemctl restart sssd
 sss_cache -E
 ```
 
-SRV tests:
+SRV tests (**fixed to test.local**):
 
 ```bash
-dig +short _ldap._tcp.dev.local SRV
-dig +short _kerberos._tcp.dev.local SRV
-host -t A dc1.dev.local
+dig +short _ldap._tcp.test.local SRV
+dig +short _kerberos._tcp.test.local SRV
+host -t A dc1.test.local
 ```
 
 Topology:
@@ -429,7 +421,7 @@ nslookup -type=NS ipa.test.local IP_DC1
 
 ## 12) Build **AD Trust** (second path)
 
-> Run on the IPA **trust controller** node. Promote using `ipa-adtrust-install`. ([Red Hat Docs][5])
+> Run on the IPA **trust controller** node. Promote using `ipa-adtrust-install`. ([Red Hat Docs][1])
 
 Enable trust components:
 
@@ -460,7 +452,7 @@ wbinfo -D TEST
 wbinfo --online-status
 ```
 
-> FreeIPA AD trust docs & one-way trust overview. ([freeipa.org][6])
+(Trust overview and one-way/two-way behavior.) ([freeipa.org][5])
 
 ---
 
@@ -498,7 +490,7 @@ sudo sss_cache -E
 sudo systemctl restart sssd
 ```
 
-> SSSD + sudo integration references. ([Red Hat Docs][7])
+(SSSD + sudo integration references.) ([Red Hat Docs][6])
 
 ---
 
@@ -537,7 +529,7 @@ ipa hbacrule-disable allow_all 2>/dev/null || true
 grep ^services /etc/sssd/sssd.conf
 grep ^sudoers  /etc/nsswitch.conf
 
-sssctl user-show 'TEST\a.sheikhi'     # NetBIOS prefix example
+sssctl user-show 'TEST\a.sheikhi'     # NetBIOS example
 id 'TEST\a.sheikhi'
 sudo -l -U 'TEST\a.sheikhi'
 
@@ -581,28 +573,21 @@ dig +short NS ipa.test.local @<IP_of_AD_DNS>
 
 ---
 
-## 18) DNS forwarding notes
-
-If forwarding doesn’t work, ensure the forward **policy** isn’t `none`; use `first` or `only` as needed. ([freeipa.org][8])
-
----
-
 ## References
 
-* FreeIPA ↔ AD trust setup (overview/how-to). ([freeipa.org][6])
-* `ipa-adtrust-install` — realm must match domain; trust controller promotion. ([Debian Manpages][1])
-* FreeIPA DNS forward zones & IdM forwarding management. ([freeipa.org][4])
+* FreeIPA ↔ AD trust setup overview/how-to. ([freeipa.org][5])
+* Promote an IPA server as **AD trust controller** (`ipa-adtrust-install`), verify roles. ([Red Hat Docs][1])
+* FreeIPA DNS forward zones and forwarding management. ([freeipa.org][4])
+* Troubleshooting forward policy (`first`/`only`). ([freeipa.org][7])
 * mod_auth_openidc (official). ([Mod_auth_openidc][3])
-* Keycloak User Federation (LDAP/AD). ([Keycloak][2])
-* SSSD with sudo (`sssd.conf` and `nsswitch.conf`). ([Red Hat Docs][7])
+* Keycloak server admin & LDAP federation docs. ([Keycloak][2])
+* SSSD with sudo (`sssd.conf` and `nsswitch.conf`). ([Red Hat Docs][6])
 
 ---
-
-[1]: https://manpages.debian.org/experimental/freeipa-server-trust-ad/ipa-adtrust-install.1.en.html?utm_source=chatgpt.com "ipa-adtrust-install(1) — freeipa-server-trust-ad"
+[1]: https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/installing_trust_between_idm_and_ad/setting-up-a-trust_installing-trust-between-idm-and-ad?utm_source=chatgpt.com "Chapter 9. Setting up a trust | Installing trust between IdM ..."
 [2]: https://www.keycloak.org/docs/latest/server_admin/index.html?utm_source=chatgpt.com "Server Administration Guide"
 [3]: https://www.mod-auth-openidc.org/?utm_source=chatgpt.com "mod_auth_openidc"
 [4]: https://www.freeipa.org/page/V4/Forward_zones?utm_source=chatgpt.com "Forward_zones — FreeIPA documentation"
-[5]: https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/installing_trust_between_idm_and_ad/setting-up-a-trust_installing-trust-between-idm-and-ad?utm_source=chatgpt.com "Chapter 9. Setting up a trust | Installing trust between IdM ..."
-[6]: https://www.freeipa.org/page/Active_Directory_trust_setup?utm_source=chatgpt.com "Active_Directory_trust_setup — FreeIPA documentation"
-[7]: https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/7/html/system-level_authentication_guide/configuring_services?utm_source=chatgpt.com "7.5. Configuring System Services for SSSD"
-[8]: https://www.freeipa.org/page/Troubleshooting/DNS?utm_source=chatgpt.com "DNS — FreeIPA documentation"
+[5]: https://www.freeipa.org/page/Active_Directory_trust_setup?utm_source=chatgpt.com "Active_Directory_trust_setup — FreeIPA documentation"
+[6]: https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/7/html/linux_domain_identity_authentication_and_policy_guide/sudo-configuration-database?utm_source=chatgpt.com "30.3. Configuring the Location for Looking up sudo Policies"
+[7]: https://www.freeipa.org/page/Troubleshooting/DNS?utm_source=chatgpt.com "DNS — FreeIPA documentation"
