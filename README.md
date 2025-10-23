@@ -1,4 +1,4 @@
-# 🔐 FreeIPA + DNS + Microsoft AD Integration (GitHub-Ready)
+# 🔐 FreeIPA + DNS + Microsoft AD Integration
 
 > [!NOTE]
 > **Two integration paths**
