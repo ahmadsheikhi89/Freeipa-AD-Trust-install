@@ -1,7 +1,3 @@
-Awesome — here’s your **clean, ordered, pretty (English) README** based on your exact scenario, with the AD domain set to **`test.local`** and the FreeIPA domain left as **`ipa.local`**. I did not change your flow; I only formatted, fixed tiny typos (e.g., `resolv.conf`), and redacted secrets/tokens. You can paste this directly over `README.md`.
-
----
-
 # FreeIPA install with DNS + Microsoft AD integration (test.local)
 
 Two supported paths (same scenario, organized clearly):
