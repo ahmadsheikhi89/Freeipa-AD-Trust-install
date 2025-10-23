@@ -24,46 +24,16 @@
 
 ## 🖼️ Architecture (Mermaid banner)
 
-```mermaid
-%%{init: {'theme': 'neutral', 'flowchart': {'curve': 'basis'}}}%%
-flowchart LR
-  classDef banner fill:#f5f7fb,stroke:#d0d7de,stroke-width:1px,color:#0b1221
-  classDef box fill:#ffffff,stroke:#1f6feb,stroke-width:1px,color:#0b1221
-  classDef svc fill:#f0fff4,stroke:#1a7f37,stroke-width:1px,color:#0b1221
-  classDef auth fill:#fff7ed,stroke:#bf8700,stroke-width:1px,color:#0b1221
-  classDef dns fill:#eef6ff,stroke:#0969da,stroke-width:1px,color:#0b1221
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ahmadsheikhi89/Freeipa-AD-Trust-install/main/freeipa-ad-trust-keycloak.png"
+       alt="FreeIPA ↔ AD (Keycloak / OIDC)" width="100%">
+</p>
 
-  subgraph B["FreeIPA ↔ Microsoft AD Integration (Overview)"]
-  class B banner
+<p align="center">
+  <img src="https://raw.githubusercontent.com/ahmadsheikhi89/Freeipa-AD-Trust-install/main/freeipa-ad-trust.png"
+       alt="FreeIPA + AD (Trust / Network)" width="100%">
+</p>
 
-  AD[(Active Directory\n(test.local))]:::box
-  DC1[[AD DC / DNS\n10.20.20.11]]:::dns
-  DC2[[AD DC / DNS\n10.20.20.12]]:::dns
-
-  subgraph IPA["FreeIPA Realm (ipa.local)"]
-    class IPA banner
-    IPA1[(IPA Master\n10.10.10.11)]:::box
-    IPA2[(IPA Replica\n10.10.10.12)]:::box
-    HBAC{{HBAC / SUDO}}:::svc
-  end
-
-  KC[(Keycloak OIDC\n10.10.10.14)]:::auth
-  APACHE[(Apache on IPA UI\nmod_auth_openidc)]:::auth
-  LNX[(Linux Clients\nSSSD)]:::svc
-
-  AD --- DC1
-  AD --- DC2
-  DC1 <-- DNS forwarders / delegation --> IPA1
-  IPA1 <-- replication --> IPA2
-  LNX ---|Kerberos/LDAP| IPA1
-  LNX ---|Failover| IPA2
-  HBAC --- LNX
-  APACHE ---|OIDC| KC
-  KC ---|LDAP Federation| AD
-  APACHE ---|protects| IPA1
-  IPA1 -. Cross-forest Trust .-> AD
-  end
-```
 
 ---
 
