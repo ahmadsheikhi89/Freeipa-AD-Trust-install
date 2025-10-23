@@ -1,130 +1,92 @@
-# FreeIPA + Active Directory — Two Integration Paths (GitHub‑ready)
+حاضره! این **README** نسخه‌ی خوشگل‌تر، یک‌دست و آمادهٔ GitHub ـه — با ایموجی، سکشن‌های واضح، و بلاک‌های کپی-پیست. می‌تونی همینو کامل جایگزین `README.md` کنی.
 
-> **Goal:** Production‑grade guide to install and operate **FreeIPA** on Rocky Linux with **two integration options**:
+---
+
+# FreeIPA ↔ Active Directory — **SSO via Keycloak** ☁️ یا **Domain Trust** 🛡️
+
+> راهنمای Production-grade برای نصب FreeIPA روی Rocky/RedHat و اتصال به Microsoft AD با دو مسیر:
 >
-> 1. **OIDC SSO** via **Keycloak** (FreeIPA UI protected by Keycloak; AD as an LDAP user‑store)
->
-> 2. **Domain Trust** between **FreeIPA ↔ Microsoft AD** (use AD users on Linux via IPA HBAC/Sudo)
->
-> The doc is air‑gapped friendly, copy‑paste ready, and uses placeholders instead of secrets.
+> **A)** SSO با Keycloak (AD به عنوان LDAP User-store)
+> **B)** Trust بین IPA↔AD برای استفاده از کاربران AD روی لینوکس (HBAC/Sudo)
+
+Air-gapped-friendly · Copy-paste-ready · بدون رمز/توکن واقعی ✅
 
 ---
 
-## Table of Contents
+## 🧭 فهرست
 
-* [Architecture Options](#architecture-options)
-* [Assumptions & IPs](#assumptions--ips)
-* [Packages & Firewall](#packages--firewall)
-* [DNS & Time (Critical)](#dns--time-critical)
-* [Install FreeIPA Master](#install-freeipa-master)
-* [Install FreeIPA Replica](#install-freeipa-replica)
-* [Option A — Keycloak SSO (OIDC) + AD LDAP](#option-a--keycloak-sso-oidc--ad-ldap)
-* [Option B — Domain Trust IPA ↔ AD](#option-b--domain-trust-ipa--ad)
-* [HBAC & Sudo (AD groups → IPA)](#hbac--sudo-ad-groups--ipa)
-* [Linux Clients Join & Tests](#linux-clients-join--tests)
-* [Cleanup / Uninstall](#cleanup--uninstall)
-* [Daily Health Checks](#daily-health-checks)
-* [Troubleshooting Quick Hits](#troubleshooting-quick-hits)
-* [Appendix: Ports, Glossary](#appendix-ports-glossary)
-
----
-
-## Architecture Options
-
-**Option A – Keycloak SSO**
-
-* AD is connected to Keycloak using LDAP (read‑only).
-* FreeIPA UI (Apache) is fronted by `mod_auth_openidc` → Keycloak.
-* Users authenticate to Keycloak; Keycloak maps to AD; FreeIPA UI authorizes.
-
-**Option B – IPA ↔ AD Trust**
-
-* Build a forest/domain trust so Linux hosts joined to IPA can use **AD users**.
-* **HBAC** controls SSH access; **Sudo rules** grant admin privileges to specific AD groups.
-* Preferred when you want PAM/NSS on Linux to resolve AD identities via IPA.
-
-> Choose **Option A** for SSO to the IPA Web UI without changing Linux auth model.
-> Choose **Option B** if your Linux fleet must accept **AD users** directly for SSH/sudo.
+* [معماری و انتخاب مسیر](#-معماری-و-انتخاب-مسیر)
+* [پیش‌فرض‌ها و متغیرها](#-پیشفرضها-و-متغیرها)
+* [نصب پکیج‌ها و فایروال](#-نصب-پکیجها-و-فایروال)
+* [DNS و زمان (حیاتی)](#-dns-و-زمان-حیاتی)
+* [نصب FreeIPA Master](#-نصب-freeipa-master)
+* [نصب FreeIPA Replica](#-نصب-freeipa-replica)
+* [مسیر A: Keycloak OIDC + AD LDAP](#-مسیر-a-keycloak-oidc--ad-ldap)
+* [مسیر B: Trust بین IPA ↔ AD](#-مسیر-b-trust-بین-ipa--ad)
+* [نقشهٔ دسترسی: External Group → POSIX → HBAC/Sudo](#-نقشهٔ-دسترسی-external-group--posix--hbacsudo)
+* [Join و تست روی کلاینت‌های لینوکسی](#-join-و-تست-روی-کلاینتهای-لینوکسی)
+* [Healthcheck روزانه](#-healthcheck-روزانه)
+* [Troubleshooting سریع](#-troubleshooting-سریع)
+* [License](#license)
 
 ---
 
-## Assumptions & IPs
+## 🧩 معماری و انتخاب مسیر
 
-> Replace IPs/FQDNs with your own. Do **not** copy passwords/tokens into source control.
+* **A) Keycloak SSO**: فقط لاگین UI فری‌IPA را OIDC می‌کنیم؛ هویت از AD (LDAP) می‌آید؛ مناسب وقتی که Auth لینوکس را دست نمی‌زنیم. تنظیم با `mod_auth_openidc` روی Apache انجام می‌شود. ([mod-auth-openidc.org][1])
+* **B) IPA↔AD Trust**: اعتماد بین جنگل‌ها/دامین‌ها برقرار می‌شود تا **کلاینت‌های لینوکسی عضو IPA** کاربران AD را برای SSH/Sudo ببینند. Trust باید طبق راهنمای FreeIPA ایجاد شود (cross-forest). ([freeipa.org][2])
 
-**FreeIPA**
-
-* Master: `ipa-mas.ipa.local` → `192.168.5.40`
-* Replica: `ipa-rep.ipa.local` → `192.168.5.41`
-
-**Active Directory**
-
-* DC1: `DC.matiran.local` → `192.168.5.1`
-* DC2: `ADDC.matiran.local` → `192.168.5.2`
-
-**Alt Example (itgroup.org)**
-
-* IPA Master: `ipa-mas.ipa.itgroup.org` → `192.168.1.150`
-* IPA Replica: `ipa-rep.ipa.itgroup.org` → `192.168.1.151`
-
-> **Realms vs Domains**: Realm is uppercase Kerberos name (e.g., `IPA.LOCAL`), domain is DNS name (e.g., `ipa.local`). They **must not be identical** to the AD domain.
+> نکتهٔ مهم Trust: نام Realm فری‌IPA باید با نام Domain آن هم‌ارزش (uppercase/lowercase) باشد؛ پیش‌نیاز `ipa-adtrust-install` هم رعایت شود. ([Debian Manpages][3])
 
 ---
 
-## Packages & Firewall
+## ⚙️ پیش‌فرض‌ها و متغیرها
 
-### Install packages (servers)
+| Var                | Sample              | Notes                         |
+| ------------------ | ------------------- | ----------------------------- |
+| `IPA_REALM`        | `IPA.LOCAL`         | Kerberos realm (UPPER)        |
+| `IPA_DOMAIN`       | `ipa.local`         | DNS domain (lower)            |
+| `IPA_MASTER_FQDN`  | `ipa-mas.ipa.local` |                               |
+| `IPA_REPLICA_FQDN` | `ipa-rep.ipa.local` |                               |
+| `AD_DOMAIN`        | `matiran.local`     | یک نمونه انتخاب و همه‌جا ثابت |
+| `AD_NETBIOS`       | `MATIRAN`           | برای `wbinfo -D`              |
+| `AD_DC1`/`AD_DC2`  | `192.168.5.1/5.2`   |                               |
+
+> آدرس‌ها و پسوردها را با مقادیر واقعی جایگزین کنید—هیچ راز/توکنی داخل ریپو نگذارید.
+
+---
+
+## 📦 نصب پکیج‌ها و فایروال
 
 ```bash
-# IPA Master/Replica nodes
 sudo dnf install -y \
   freeipa-server freeipa-server-dns freeipa-client ipa-healthcheck \
   freeipa-server-trust-ad samba samba-client samba-winbind samba-winbind-clients \
   oddjob oddjob-mkhomedir realmd adcli sssd
-```
 
-### Firewall (servers)
-
-```bash
+# Firewall
 sudo firewall-cmd --permanent --add-port={80/tcp,443/tcp,389/tcp,636/tcp,88/tcp,88/udp,464/tcp,464/udp,53/tcp,53/udp}
 sudo firewall-cmd --permanent --add-service={http,https,ldap,ldaps,kerberos,kpasswd,freeipa-trust,freeipa-replication}
-sudo firewall-cmd --reload
-sudo firewall-cmd --list-services
+sudo firewall-cmd --reload && sudo firewall-cmd --list-services
 ```
 
 ---
 
-## DNS & Time (Critical)
+## ⏱️ DNS و زمان (حیاتی)
 
-* Ensure **chrony/NTP** sync for all nodes (Kerberos breaks if time skew > 5 minutes).
-* Use **conditional forwarders** between IPA and AD zones.
-* Do **not** hardcode AD hostnames in `/etc/hosts` on IPA nodes. Use DNS.
+* اختلاف زمان >۵ دقیقه = شکست Kerberos. از NTP/Chrony سازمانی استفاده کنید.
+* **Conditional Forwarders** دوطرفه میان IPA و AD بسازید. **Forward policy = only** برای زون‌های هدف توصیه می‌شود. ([freeipa.org][4])
 
-### Example resolv.conf handling
-
-```bash
-sudo bash -c 'cat >/etc/resolv.conf <<EOF
-nameserver 192.168.5.40   # IPA
-nameserver 192.168.5.41   # IPA
-nameserver 192.168.5.1    # AD
-nameserver 192.168.5.2    # AD
-EOF'
-# (Optional) lock file if your policy allows it
-# sudo chattr +i /etc/resolv.conf
-```
-
-### Conditional Forwarders (create both ways)
-
-**On IPA → forward AD**
+**روی IPA → Forward به AD:**
 
 ```bash
-ipa dnsforwardzone-add matiran.local \
-  --forwarder=192.168.5.1 \
-  --forwarder=192.168.5.2 \
+ipa dnsforwardzone-add ${AD_DOMAIN} \
+  --forwarder=${AD_DC1} \
+  --forwarder=${AD_DC2} \
   --forward-policy=only
 ```
 
-**On AD → forward IPA** (PowerShell on DC)
+**روی AD → Forward به IPA (PowerShell روی DC):**
 
 ```powershell
 Add-DnsServerConditionalForwarderZone -Name "ipa.local" `
@@ -132,80 +94,68 @@ Add-DnsServerConditionalForwarderZone -Name "ipa.local" `
   -ReplicationScope "Forest"
 ```
 
-**Quick checks**
+**نمونهٔ resolv.conf (مدیریت با NMCLI بهتر است):**
 
 ```bash
-dig +short _ldap._tcp.matiran.local SRV @127.0.0.1
-dig +short DC.matiran.local @127.0.0.1
+nmcli con mod <IFNAME> ipv4.dns "192.168.5.40,192.168.5.41"
+nmcli con mod <IFNAME> ipv4.ignore-auto-dns yes
+nmcli con down <IFNAME> && nmcli con up <IFNAME>
 ```
 
 ---
 
-## Install FreeIPA Master
+## 🚀 نصب FreeIPA Master
 
 ```bash
-sudo hostnamectl set-hostname ipa-mas.ipa.local
+sudo hostnamectl set-hostname ${IPA_MASTER_FQDN}
 
-sudo ipa-server-install -U \
-  --realm IPA.LOCAL \
-  --domain ipa.local \
-  --hostname ipa-mas.ipa.local \
+ipa-server-install -U \
+  --realm ${IPA_REALM} \
+  --domain ${IPA_DOMAIN} \
+  --hostname ${IPA_MASTER_FQDN} \
   --ds-password '<Directory_Manager_Password>' \
   --admin-password '<IPA_Admin_Password>' \
   --setup-dns \
-  --forwarder=192.168.5.1 \
-  --forwarder=192.168.5.2 \
+  --forwarder=${AD_DC1} \
+  --forwarder=${AD_DC2} \
   --no-ntp
 
 ipactl status
 ipa-healthcheck
 ```
 
-> Alt (without forwarders): pass `--no-forwarders` if you don’t want IPA to forward DNS.
-
 ---
 
-## Install FreeIPA Replica
-
-### Join as client (with **-N** to avoid touching org NTP)
+## ➕ نصب FreeIPA Replica
 
 ```bash
+# Join به‌عنوان کلاینت (NTP سازمانی را دست‌نزن: -N)
 ipa-client-install -U \
-  --domain=ipa.local \
-  --server=ipa-mas.ipa.local \
-  --realm=IPA.LOCAL \
+  --domain=${IPA_DOMAIN} \
+  --server=${IPA_MASTER_FQDN} \
+  --realm=${IPA_REALM} \
   --mkhomedir -N \
   --principal=admin \
   --password '<IPA_Admin_Password>'
-```
 
-### Promote to replica
-
-```bash
+# Promote به Replica + DNS
 ipa-replica-install -U \
-  --hostname ipa-rep.ipa.local \
+  --hostname ${IPA_REPLICA_FQDN} \
   --setup-dns \
   --no-ntp \
   --no-forwarders \
   --principal=admin \
   --admin-password '<IPA_Admin_Password>'
-```
 
-**Validate**
-
-```bash
 kinit admin
-ipactl status
 ipa-healthcheck
-ipa topologysegment-find domain
-ipa topologysegment-find ca
 ```
 
 ---
 
-## Option A — Keycloak SSO (OIDC) + AD LDAP
+## 🔐 مسیر A: Keycloak OIDC + AD LDAP
 
-### Keycloak (Docker Compose)
+**Keycloak (Docker Compose – Dev use only):**
 
 ```yaml
 version: "3.8"
@@ -215,43 +165,15 @@ services:
     environment:
       KC_HOSTNAME: keycloak.ipa.local
       KC_HOSTNAME_PORT: 7080
-      KC_HOSTNAME_STRICT_BACKCHANNEL: "true"
       KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: <ADMIN_PW>
+      KEYCLOAK_ADMIN_PASSWORD: CHANGE_ME
       KC_HEALTH_ENABLED: "true"
-      KC_LOG_LEVEL: info
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7080/health/ready"]
-      interval: 15s
-      timeout: 2s
-      retries: 15
-    command: ["start-dev", "--http-port", "7080", "--https-port", "7443"]
-    ports:
-      - "7080:7080"
-      - "7443:7443"
+    command: ["start-dev","--http-port","7080","--https-port","7443"]
+    ports: ["7080:7080","7443:7443"]
 ```
 
-### Connect AD as LDAP user‑federation
-
-* **Connection URL**: `ldap://192.168.5.1:389`
-* **Bind DN**: `CN=keycloak,CN=Users,DC=dev,DC=local`
-* **Bind type**: `simple` (read‑only)
-* **Users DN**: `DC=dev,DC=local`
-* **Username attr**: `userPrincipalName`
-* **RDN attr**: `cn`
-* **Search scope**: `subtree`
-* **Pagination/Import/Sync**: `ON`
-
-**Group mapper (example)**
-
-* Mapper type: `group-ldap-mapper`
-* LDAP Groups DN: `DC=dev,DC=local`
-* Group Name attr: `cn`
-* Membership attr: `member` (Type=DN)
-* User LDAP filter: `(&(ObjectCategory=Person)(ObjectClass=User)(!(isCriticalSystemObject=TRUE)))`
-* Mode: `READ_ONLY`
-
-### FreeIPA Apache ↔ Keycloak (mod_auth_openidc)
+**Apache OIDC روی FreeIPA UI** (خلاصه؛ به مستند رسمی مراجعه کنید):
+`mod_auth_openidc` ماژول رسمی OIDC برای Apache است؛ با Keycloak سازگار است. ([mod-auth-openidc.org][1])
 
 ```bash
 sudo dnf install -y mod_auth_openidc jq
@@ -262,29 +184,27 @@ OIDCClientSecret    <CLIENT_SECRET>
 OIDCRedirectURI     https://ipa-mas.ipa.local/oidc_callback
 OIDCCryptoPassphrase <LONG_RANDOM>
 
-OIDCScope               "openid profile email"
-OIDCRemoteUserClaim     preferred_username
-OIDCOAuthAcceptTokenAs  header
-OIDCClaimPrefix         ""
-OIDCPassIDTokenAs       serialized
-OIDCPassUserInfoAs      claims
+OIDCScope "openid profile email"
+OIDCRemoteUserClaim preferred_username
+OIDCOAuthAcceptTokenAs header
+OIDCClaimPrefix ""
+OIDCPassIDTokenAs serialized
+OIDCPassUserInfoAs claims
 
-OIDCSessionType             server-cache
+OIDCSessionType server-cache
 OIDCSessionInactivityTimeout 3600
-OIDCStripCookies            On
+OIDCStripCookies On
 LogLevel auth_openidc:warn
 
 <Location /oidc_callback>
   AuthType openid-connect
   Require valid-user
 </Location>
-
 <Location "/ipa/ui">
   AuthType openid-connect
   Require valid-user
   RequestHeader set X-Remote-User %{REMOTE_USER}s
 </Location>
-
 <Location "/ipa/json">
   AuthType openid-connect
   Require valid-user
@@ -295,70 +215,62 @@ CONF
 sudo systemctl restart httpd
 ```
 
-> Generate tokens only for testing via Keycloak’s token endpoint. **Do not** commit real tokens to Git.
-
 ---
 
-## Option B — Domain Trust IPA ↔ AD
+## 🛡️ مسیر B: Trust بین IPA ↔ AD
 
-### Enable trust components on IPA
-
-```bash
-sudo ipa-adtrust-install --netbios-name=IPA --add-sids
-sudo firewall-cmd --permanent --add-service=freeipa-trust && sudo firewall-cmd --reload
-sudo systemctl enable --now smb winbind sssd
-```
-
-### Create the trust
-
-**Method 1 — with AD admin creds**
+**گام 1 — آماده‌سازی Trust Controller در IPA:**
 
 ```bash
-ipa trust-add --type=ad dev.local --admin Administrator --password
+ipa-adtrust-install --netbios-name=IPA --add-sids
+# این نود Trust Controller می‌شود؛ لازم نیست روی همهٔ مسترها اجرا شود. :contentReference[oaicite:5]{index=5}
+firewall-cmd --permanent --add-service=freeipa-trust && firewall-cmd --reload
 ```
 
-**Method 2 — pre-shared secret** (when AD team creates the trust on their side)
+**گام 2 — ساخت Trust (یکی از دو روش):**
 
 ```bash
-ipa trust-add --type=ad dev.local --trust-secret
+# روش Admin (با اکانت AD)
+ipa trust-add --type=ad ${AD_DOMAIN} --admin Administrator --password
+# روش Secret (وقتی از سمت AD هم تنظیم می‌کنند)
+ipa trust-add --type=ad ${AD_DOMAIN} --trust-secret
 ```
 
-**Post‑trust refresh & verify**
+> فرمان رسمی `trust-add` و سناریوهای تست: مستند FreeIPA. ([freeipa.readthedocs.io][5])
+
+**گام 3 — تازه‌سازی و تأیید:**
 
 ```bash
 ipa trust-fetch-domains
-echo | wbinfo -p            # ping winbind
-wbinfo -m                   # list trusted domains
-wbinfo -D DEV               # details
+echo | wbinfo -p
+wbinfo -m
+wbinfo -D ${AD_NETBIOS}
 systemctl restart sssd && sss_cache -E
-
-id 'user@dev.local'        # should resolve
+id 'user@'${AD_DOMAIN}
 ```
-
-> If you expect **forest trust**, ensure AD creates forest‑level trust, not just external. SRV records must resolve both ways.
 
 ---
 
-## HBAC & Sudo (AD groups → IPA)
+## 🧷 نقشهٔ دسترسی: External Group → POSIX → HBAC/Sudo
 
-**Pattern:** *AD group* → **External group in IPA** → **POSIX proxy group** → HBAC/Sudo rules.
+الگو: گروه AD ←(**external**)← گروه IPA ←(**POSIX proxy**)← اعمال در **HBAC/Sudo**.
 
 ```bash
-# External group (represents an AD group)
+# External group (نمایندهٔ گروه AD)
 ipa group-add ad-linux-sudo-ext --external
-ipa group-add-member ad-linux-sudo-ext --external 'DEV\\Linux-Sudo'
+ipa group-add-member ad-linux-sudo-ext --external "${AD_NETBIOS}\\Linux-Sudo"
 
 # POSIX proxy group
 ipa group-add linux-sudo --gid=55000 --desc="POSIX sudo group"
 ipa group-add-member linux-sudo --groups=ad-linux-sudo-ext
 
-# Sudo: ALL on all hosts for linux-sudo
+# Sudo: ALL
 ipa sudorule-add sudo_linux_sudo --hostcat=all --runasusercat=all
 ipa sudorule-add-user sudo_linux_sudo --groups=linux-sudo
 ipa sudorule-add-allow-command sudo_linux_sudo --sudocmds=ALL
 ipa sudorule-enable sudo_linux_sudo
 
-# HBAC: allow SSH for linux-sudo
+# HBAC: اجازهٔ SSH
 ipa hbacrule-add allow_ssh_linux_sudo --servicecat=all
 ipa hbacrule-add-user allow_ssh_linux_sudo --groups=linux-sudo
 ipa hbacrule-add-service allow_ssh_linux_sudo --hbacsvcs=sshd
@@ -366,171 +278,105 @@ ipa hbacrule-add-host allow_ssh_linux_sudo --hostcat=all
 ipa hbacrule-enable allow_ssh_linux_sudo
 ```
 
-**Client‑side SSSD sudo integration**
+**SSSD + sudo روی کلاینت‌ها (حداقل لازم):**
 
 ```bash
-sudo sed -i 's/^services = .*/services = nss, pam, ssh, sudo/' /etc/sssd/sssd.conf
-sudo awk 'BEGIN{d=0}/^sudoers:/{print "sudoers: files sss";d=1;next}{print}END{if(!d)print "sudoers: files sss"}' \
-  /etc/nsswitch.conf | sudo tee /etc/nsswitch.conf >/dev/null
-sudo sss_cache -E && sudo systemctl restart sssd
+# /etc/sssd/sssd.conf  → سرویسی به sudo هم بده
+# [sssd]
+# services = nss, pam, ssh, sudo
+
+# /etc/nsswitch.conf
+sudoers: files sss
 ```
+
+(مرجع RHEL/SSSD برای sudo از طریق SSSD.) ([Red Hat Docs][6])
 
 ---
 
-## Linux Clients Join & Tests
+## 🖥️ Join و تست روی کلاینت‌های لینوکسی
 
 ```bash
 ipa-client-install -U \
-  --domain=ipa.local \
-  --server=ipa-mas.ipa.local \
-  --realm=IPA.LOCAL \
+  --domain=${IPA_DOMAIN} \
+  --server=${IPA_MASTER_FQDN} \
+  --realm=${IPA_REALM} \
   --mkhomedir -N \
   --principal=admin \
   --password '<IPA_Admin_Password>'
 
-# After trust
 systemctl restart sssd
 sss_cache -E
 
-# Checks
-sssctl user-show 'DEV\\a.sheikhi'
-id 'DEV\\a.sheikhi'
-sudo -l -U 'DEV\\a.sheikhi'
+# تست‌ها
+sssctl user-show "${AD_NETBIOS}\\a.sheikhi"
+id "${AD_NETBIOS}\\a.sheikhi"
+sudo -l -U "${AD_NETBIOS}\\a.sheikhi"
 ```
 
 ---
 
-## Cleanup / Uninstall
-
-```bash
-ipa-server-install  --uninstall -U || true
-ipa-replica-install --uninstall -U || true
-ipa-client-install  --uninstall -U || true
-systemctl stop sssd || true
-rm -rf /etc/ipa /var/lib/ipa /var/log/ipa* /var/lib/sss/db/* /var/lib/sss/mc/* /var/lib/ipa/sysrestore/* 2>/dev/null || true
-rm -f  /etc/krb5.keytab /etc/krb5.conf.bak 2>/dev/null || true
-```
-
----
-
-## Daily Health Checks
+## 🩺 Healthcheck روزانه
 
 ```bash
 ipactl status
 ipa-healthcheck
+
 ipa trust-find
 ipa trust-fetch-domains
+
 systemctl status sssd smb winbind --no-pager
 
-kinit -V admin
-
-dig +short _ldap._tcp.ipa.local SRV @127.0.0.1
-dig +short _ldap._tcp.dev.local SRV @127.0.0.1
+# DNS sanity
+dig +short _ldap._tcp.${IPA_DOMAIN} SRV @127.0.0.1
+dig +short _ldap._tcp.${AD_DOMAIN} SRV @127.0.0.1
 ```
 
 ---
 
-## Troubleshooting Quick Hits
+## 🧯 Troubleshooting سریع
 
-* **Time/NTP:** Always verify `chronyc sources -v` on all nodes.
-* **DNS:** From IPA, AD SRV must resolve; from AD, IPA SRV must resolve.
-* **Trust fails:** Open `freeipa-trust` service on IPA firewall; confirm AD created **forest** trust if required.
-* **`Cannot contact LDAP server`:** Check 389‑DS, FQDN entries, and that you didn’t put IPA FQDN next to `127.0.0.1` in `/etc/hosts`.
-* **Users visible but SSH denied:** Missing/incorrect **HBAC** rules.
-* **Sudo not applying:** Ensure `services = ... sudo` in `sssd.conf` and `sudoers: files sss` in `nsswitch.conf`.
-
----
-
-## Appendix: Ports, Glossary
-
-**Open Ports (server side)**
-
-* **LDAP** 389/636, **Kerberos** 88/464 (TCP/UDP)
-* **HTTP/HTTPS** 80/443, **Dogtag** 8443
-* **Samba/Winbind** 135, 137–139, 445, **GC** 3268, **EPMAP range** 1024–1300
-* **DNS** 53 (TCP/UDP)
-
-**Glossary**
-
-* **Realm** (Kerberos) vs **Domain** (DNS) — Not the same; keep IPA realm/domain different from AD.
-* **HBAC** — Host‑Based Access Control rules for SSH access.
-* **External group** — IPA group whose members come from AD.
-* **POSIX proxy group** — IPA POSIX group that includes an external group to grant Unix IDs.
+* **Time/Skew**: اول Chrony/NTP را چک کن.
+* **DNS**: SRV های هر دو طرف باید از طرف مقابل resolve شوند؛ forward-policy را روی `only`/`first` درست بگذار. ([freeipa.org][7])
+* **Trust نمی‌سازد**: مطمئن شو `ipa-adtrust-install` روی حداقل یک مستر اجرا شده و همین نود Trust Controller است. سپس `ipa trust-add ...`، بعد `trust-fetch-domains` و `wbinfo -m/-D`. ([Red Hat Docs][8])
+* **کاربر AD دیده می‌شود ولی SSH نمی‌شود**: HBAC درست نیست.
+* **sudo اعمال نمی‌شود**: `services = ... sudo` در `sssd.conf` و `sudoers: files sss` در `nsswitch.conf`. ([Red Hat Docs][6])
 
 ---
 
-## Repo Layout Suggestion
+## License
+
+MIT — اسکریپت‌ها/مستندات آموزشی.
+**⚠️ امنیت:** هرگز رمز/توکن واقعی را در Git نگذار؛ secrets را rotate کن.
+
+---
+
+### 🧱 ساختار پیشنهادی ریپو
 
 ```
-freeipa-ad-integration/
-├─ README.md                 # This file
+.
+├─ README.md
+├─ LICENSE
+├─ .gitignore
 ├─ keycloak/
-│  └─ docker-compose.yml     # Keycloak for OIDC SSO
+│  └─ docker-compose.yml
 ├─ scripts/
-│  ├─ ipa-install-master.sh  # Parameterized installer
+│  ├─ ipa-install-master.sh
 │  ├─ ipa-install-replica.sh
 │  ├─ ipa-trust-setup.sh
-│  ├─ ipa-cleanup.sh
-│  └─ checks.sh              # Health/DNS/trust checks
+│  └─ checks.sh
 └─ examples/
-   ├─ httpd-oidc.conf        # 05-oidc.conf sample
-   └─ ad-powershell.ps1      # AD install / forwarders / tests
-```
-
-> ⚠️ **Security**: replace `<...>` placeholders; never commit real passwords, tokens, or secrets.
-
----
-
-## scripts/ipa-install-master.sh (example)
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-REALM=${REALM:-IPA.LOCAL}
-DOMAIN=${DOMAIN:-ipa.local}
-HOSTNAME=${HOSTNAME:-ipa-mas.ipa.local}
-DM_PW=${DM_PW:?set Directory Manager PW}
-ADMIN_PW=${ADMIN_PW:?set IPA admin PW}
-FWD1=${FWD1:-192.168.5.1}
-FWD2=${FWD2:-192.168.5.2}
-
-ipa-server-install -U \
-  --realm "$REALM" \
-  --domain "$DOMAIN" \
-  --hostname "$HOSTNAME" \
-  --ds-password "$DM_PW" \
-  --admin-password "$ADMIN_PW" \
-  --setup-dns \
-  --forwarder="$FWD1" \
-  --forwarder="$FWD2" \
-  --no-ntp
-```
-
-## scripts/ipa-trust-setup.sh (example)
-
-```bash
-#!/usr/bin/env bash
-set -euo pipefail
-TRUST_DOMAIN=${TRUST_DOMAIN:?e.g. dev.local}
-METHOD=${METHOD:-secret}  # secret|admin
-
-ipa-adtrust-install --netbios-name=IPA --add-sids
-firewall-cmd --permanent --add-service=freeipa-trust || true
-firewall-cmd --reload || true
-
-case "$METHOD" in
-  admin)
-    ipa trust-add --type=ad "$TRUST_DOMAIN" --admin Administrator --password ;;
-  secret)
-    ipa trust-add --type=ad "$TRUST_DOMAIN" --trust-secret ;;
-  *) echo "Unknown METHOD"; exit 1;;
-esac
-
-ipa trust-fetch-domains
-systemctl restart sssd
-sss_cache -E
+   └─ ad-powershell.ps1
 ```
 
 ---
 
-**License:** MIT (docs/examples only). Contribution PRs welcome.
+اگه خواستی، همین رو به چند فایل (اسکریپت‌ها + compose + نمونهٔ conf) برات **zip** کنم تا مستقیم آپلود کنی—بگو «زیپ بساز».
+
+[1]: https://www.mod-auth-openidc.org/?utm_source=chatgpt.com "mod_auth_openidc"
+[2]: https://www.freeipa.org/page/Active_Directory_trust_setup?utm_source=chatgpt.com "Active_Directory_trust_setup — FreeIPA documentation"
+[3]: https://manpages.debian.org/experimental/freeipa-server-trust-ad/ipa-adtrust-install.1.en.html?utm_source=chatgpt.com "ipa-adtrust-install(1) — freeipa-server-trust-ad"
+[4]: https://www.freeipa.org/page/V4/Forward_zones?utm_source=chatgpt.com "Forward_zones — FreeIPA documentation"
+[5]: https://freeipa.readthedocs.io/en/ipa-4-11/api/trust_add.html?utm_source=chatgpt.com "trust_add — FreeIPA 4.11-dev documentation"
+[6]: https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/7/html/linux_domain_identity_authentication_and_policy_guide/sudo-configuration-database?utm_source=chatgpt.com "30.3. Configuring the Location for Looking up sudo Policies"
+[7]: https://www.freeipa.org/page/Troubleshooting/DNS?utm_source=chatgpt.com "DNS — FreeIPA documentation"
+[8]: https://docs.redhat.com/en/documentation/red_hat_enterprise_linux/9/html/installing_trust_between_idm_and_ad/setting-up-a-trust_installing-trust-between-idm-and-ad?utm_source=chatgpt.com "Chapter 9. Setting up a trust | Installing trust between IdM ..."
