@@ -1,5 +1,3 @@
----
-
 ✨ What this repo gives you
 
 A repeatable, production-style recipe to integrate FreeIPA (ipa.local) with Microsoft Active Directory (test.local).
