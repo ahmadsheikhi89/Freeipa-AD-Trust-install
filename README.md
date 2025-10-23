@@ -26,12 +26,9 @@
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/ahmadsheikhi89/Freeipa-AD-Trust-install/main/freeipa-ad-trust-keycloak.png"
-       alt="FreeIPA ↔ AD (Keycloak / OIDC)" width="100%">
-</p>
-
-<p align="center">
+       alt="FreeIPA ↔ AD (Keycloak / OIDC)" width="49%">
   <img src="https://raw.githubusercontent.com/ahmadsheikhi89/Freeipa-AD-Trust-install/main/freeipa-ad-trust.png"
-       alt="FreeIPA + AD (Trust / Network)" width="100%">
+       alt="FreeIPA + AD (Trust / Network)" width="49%">
 </p>
 
 
@@ -44,9 +41,9 @@
 
 | Zone / Role | Hostname (FQDN)             | IP            |
 |---|---|---|
-| FreeIPA | ipa-mas.ipa.test.local          | 10.10.10.11   |
-| FreeIPA | ipa-rep.ipa.test.local          | 10.10.10.12   |
-| FreeIPA | log-srv.ipa.test.local          | 10.10.10.13   |
+| FreeIPA | ipa-mas.ipa.local           | 10.10.10.11   |
+| FreeIPA | ipa-rep.ipa.local           | 10.10.10.12   |
+| FreeIPA | log-srv.ipa.local            | 10.10.10.13   |
 | FreeIPA | keycloak.ipa.local              | 10.10.10.14   |
 | FreeIPA | linuxclient.ipa.local           | 10.10.10.15   |
 | AD      | dc1.test.local                  | 10.20.20.11   |
