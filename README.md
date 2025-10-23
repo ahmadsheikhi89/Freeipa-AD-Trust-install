@@ -1,4 +1,4 @@
-# FreeIPA install with DNS + Microsoft AD integration (test.local)
+# FreeIPA install with DNS + Microsoft AD integration
 
 Two supported paths (same scenario, organized clearly):
 
