@@ -514,7 +514,7 @@ sssctl user-show 'TEST\a.sheikhi'
 id 'TEST\a.sheikhi'
 sudo -l -U 'TEST\a.sheikhi'
 
-sudo -l -U 'TEST\m.hadadian'   # expect no sudo if not in group
+sudo -l -U 'TEST\m.reza'   # expect no sudo if not in group
 ```
 </details>
 
