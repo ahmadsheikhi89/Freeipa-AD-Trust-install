@@ -39,6 +39,12 @@ Result: **No per-server local accounts**, one place to manage access, and seamle
        alt="FreeIPA + AD (Trust / Network)" width="49%">
 </p>
 
+<p align="left">
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/License-MIT-informational"></a>
+  <img alt="Platform" src="https://img.shields.io/badge/Platform-RHEL/Rocky-0A7BBB">
+  <img alt="Auth" src="https://img.shields.io/badge/Auth-AD%20Trust%20%7C%20OIDC-7B61FF">
+  <img alt="Infra" src="https://img.shields.io/badge/Infra-FreeIPA%20%7C%20Keycloak%20%7C%20SSSD-1F6FEB">
+</p>
 
 ---
 
