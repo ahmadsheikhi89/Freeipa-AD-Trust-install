@@ -5,6 +5,12 @@
 > 1) **FreeIPA → Keycloak → AD** (OIDC for UI; AD via LDAP)  
 > 2) **FreeIPA → Domain Trust → AD** (AD users on Linux via trust)
 
+> [!WARNING]
+> Replace sample **IPs**, **passwords**, and **tokens** with your own. **Never commit real secrets.**  
+> Correct file name is `/etc/resolv.conf` (not `resolve.conf`).  
+> Promote at least one IPA server as an **AD trust controller** for trust setup.
+
+---
 ## 🎯 What we’re solving
 
 We want Windows/AD users to log in to Linux servers **with the same AD username and password** over SSH.  
@@ -13,13 +19,6 @@ To achieve this, Linux hosts join **FreeIPA**; FreeIPA establishes a **cross-for
 - **Authorization**: enforced on Linux via FreeIPA **HBAC** and **SUDO** policies.
 - **Name resolution**: clean DNS between `ipa.local` and `test.local` using conditional forwarders/delegation.
 Result: **No per-server local accounts**, one place to manage access, and seamless SSH using **DOMAIN\user** or **user@test.local**.
-
-> [!WARNING]
-> Replace sample **IPs**, **passwords**, and **tokens** with your own. **Never commit real secrets.**  
-> Correct file name is `/etc/resolv.conf` (not `resolve.conf`).  
-> Promote at least one IPA server as an **AD trust controller** for trust setup.
-
----
 
 ## ✨ What you get
 
