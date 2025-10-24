@@ -52,7 +52,7 @@ Result: **No per-server local accounts**, one place to manage access, and seamle
 ## 🧭 Address plan (examples)
 
 > [!NOTE]
-> You can change these—kept consistent here for copy/paste testing.
+> You can change these 👇 kept consistent here for copy/paste testing.
 
 | Zone / Role | Hostname (FQDN)             | IP            |
 |---|---|---|
