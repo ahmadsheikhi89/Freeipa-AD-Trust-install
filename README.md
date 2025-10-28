@@ -284,8 +284,8 @@ sudo tail -n 50 -f /var/log/httpd/error_log
 
 On **AD DNS** (`test.local`) create **New Delegation** for `ipa` to:
 
-- `ipa-mas.ipa.test.local.` → A: `10.10.10.11`  
-- `ipa-rep.ipa.test.local.` → A: `10.10.10.12`  
+- `ipa-mas.ipa.local.` → A: `10.10.10.11`  
+- `ipa-rep.ipa.local.` → A: `10.10.10.12`  
 *(Create Glue A records.)*
 </details>
 
