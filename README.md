@@ -108,14 +108,14 @@ nmcli connection down ens33 && nmcli connection up ens33
 
 **2.2 Hostname & `/etc/hosts`**
 ```bash
-hostnamectl set-hostname ipa-mas.ipa.test.local
+hostnamectl set-hostname ipa-mas.ipa.local
 
 # /etc/hosts (IPA side)
 127.0.0.1   localhost
 ::1         localhost
-10.10.10.11 ipa-mas.ipa.test.local  ipa-mas
-10.10.10.12 ipa-rep.ipa.test.local  ipa-rep
-10.10.10.13 log-srv.ipa.test.local  log-srv
+10.10.10.11 ipa-mas.ipa.local  ipa-mas
+10.10.10.12 ipa-rep.ipa.local  ipa-rep
+10.10.10.13 log-srv.ipa.local  log-srv
 
 # Separate view (IPA vs AD)
 10.10.10.11 ipa-mas.ipa.local   ipa-mas
