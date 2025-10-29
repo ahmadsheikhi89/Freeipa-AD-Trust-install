@@ -404,17 +404,17 @@ ipa trust-fetch-domains
 ```bash
 # A records
 dig +short ipa-master.ipa.local A
-dig +short ipa-rep.ipa.test.local A
+dig +short ipa-rep.ipa.local A
 
 # SRV (after replica, should list both servers)
-dig +short _ldap._tcp.ipa.test.local SRV @127.0.0.1
-dig +short _kerberos._tcp.ipa.test.local SRV @127.0.0.1
+dig +short _ldap._tcp.ipa.local SRV @127.0.0.1
+dig +short _kerberos._tcp.ipa.local SRV @127.0.0.1
 ```
 
 From a machine using **AD DNS**:
 ```powershell
-nslookup ipa-mas.ipa.test.local 10.20.20.11
-nslookup -type=NS ipa.test.local 10.20.20.11
+nslookup ipa-mas.ipa.local 10.20.20.11
+nslookup -type=NS ipa.local 10.20.20.11
 ```
 </details>
 
